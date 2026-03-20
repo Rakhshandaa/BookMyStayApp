@@ -1,27 +1,28 @@
 /**
- * Use Case 8: Booking History & Reporting
+ * Use Case 9: Error Handling & Validation
  * Book My Stay Application
  *
  * @author Pari
- * @version 8.1
+ * @version 9.1
  */
 
 import java.util.*;
 
-// Reservation (confirmed booking)
+// Custom Exception
+class InvalidBookingException extends Exception {
+  public InvalidBookingException(String message) {
+    super(message);
+  }
+}
+
+// Reservation
 class Reservation {
-  private String reservationId;
   private String guestName;
   private String roomType;
 
-  public Reservation(String reservationId, String guestName, String roomType) {
-    this.reservationId = reservationId;
+  public Reservation(String guestName, String roomType) {
     this.guestName = guestName;
     this.roomType = roomType;
-  }
-
-  public String getReservationId() {
-    return reservationId;
   }
 
   public String getGuestName() {
@@ -33,51 +34,73 @@ class Reservation {
   }
 }
 
-// Booking History (List maintains order)
-class BookingHistory {
+// Inventory
+class RoomInventory {
+  private Map<String, Integer> inventory = new HashMap<>();
 
-  private List<Reservation> history = new ArrayList<>();
-
-  // Add confirmed booking
-  public void addReservation(Reservation r) {
-    history.add(r);
+  public RoomInventory() {
+    inventory.put("Single Room", 1);
+    inventory.put("Double Room", 1);
   }
 
-  // Get all bookings
-  public List<Reservation> getAllReservations() {
-    return history;
+  public int getAvailability(String type) {
+    return inventory.getOrDefault(type, -1);
+  }
+
+  public void reduceAvailability(String type) throws InvalidBookingException {
+    int available = getAvailability(type);
+
+    if (available <= 0) {
+      throw new InvalidBookingException("No rooms available for " + type);
+    }
+
+    inventory.put(type, available - 1);
+  }
+
+  public boolean isValidRoomType(String type) {
+    return inventory.containsKey(type);
   }
 }
 
-// Reporting Service
-class BookingReportService {
+// Validator (Fail-Fast)
+class BookingValidator {
 
-  // Display all bookings
-  public void showAllBookings(List<Reservation> reservations) {
+  public void validate(Reservation r, RoomInventory inventory) throws InvalidBookingException {
 
-    System.out.println("\nBooking History:\n");
+    if (r.getGuestName() == null || r.getGuestName().isEmpty()) {
+      throw new InvalidBookingException("Guest name cannot be empty");
+    }
 
-    for (Reservation r : reservations) {
-      System.out.println("ID: " + r.getReservationId() +
-              " | Guest: " + r.getGuestName() +
-              " | Room: " + r.getRoomType());
+    if (!inventory.isValidRoomType(r.getRoomType())) {
+      throw new InvalidBookingException("Invalid room type: " + r.getRoomType());
+    }
+
+    if (inventory.getAvailability(r.getRoomType()) <= 0) {
+      throw new InvalidBookingException("Room not available: " + r.getRoomType());
     }
   }
+}
 
-  // Generate summary report
-  public void generateSummary(List<Reservation> reservations) {
+// Booking Service
+class BookingService {
 
-    System.out.println("\nBooking Summary Report:\n");
+  private BookingValidator validator = new BookingValidator();
 
-    Map<String, Integer> countMap = new HashMap<>();
+  public void processBooking(Reservation r, RoomInventory inventory) {
 
-    for (Reservation r : reservations) {
-      String type = r.getRoomType();
-      countMap.put(type, countMap.getOrDefault(type, 0) + 1);
-    }
+    try {
+      // Validate first (Fail-Fast)
+      validator.validate(r, inventory);
 
-    for (Map.Entry<String, Integer> entry : countMap.entrySet()) {
-      System.out.println(entry.getKey() + " booked: " + entry.getValue());
+      // Allocate (safe state)
+      inventory.reduceAvailability(r.getRoomType());
+
+      System.out.println("Booking SUCCESS for " + r.getGuestName() +
+              " (" + r.getRoomType() + ")");
+
+    } catch (InvalidBookingException e) {
+      // Graceful failure
+      System.out.println("Booking FAILED: " + e.getMessage());
     }
   }
 }
@@ -88,21 +111,15 @@ public class BookMyStayApp {
   public static void main(String[] args) {
 
     System.out.println("Welcome to Book My Stay App");
-    System.out.println("Hotel Booking System v8.1\n");
+    System.out.println("Hotel Booking System v9.1\n");
 
-    BookingHistory history = new BookingHistory();
-    BookingReportService report = new BookingReportService();
+    RoomInventory inventory = new RoomInventory();
+    BookingService service = new BookingService();
 
-    // Add confirmed bookings
-    history.addReservation(new Reservation("RES101", "Alice", "Single Room"));
-    history.addReservation(new Reservation("RES102", "Bob", "Double Room"));
-    history.addReservation(new Reservation("RES103", "Charlie", "Single Room"));
-    history.addReservation(new Reservation("RES104", "David", "Suite Room"));
-
-    // Show history
-    report.showAllBookings(history.getAllReservations());
-
-    // Generate report
-    report.generateSummary(history.getAllReservations());
+    // Test cases
+    service.processBooking(new Reservation("Alice", "Single Room"), inventory); // success
+    service.processBooking(new Reservation("Bob", "Single Room"), inventory);   // fail (no availability)
+    service.processBooking(new Reservation("", "Double Room"), inventory);      // fail (empty name)
+    service.processBooking(new Reservation("Charlie", "Suite Room"), inventory); // fail (invalid type)
   }
 }
